@@ -6,12 +6,43 @@ import matplotlib.pyplot as plt
 import sys
 import random
 import time
+import pandas
+
+#-----------------------------------------------------------------------------
+#                   READ ME
+#-----------------------------------------------------------------------------
+# Import balloon before calling function
+
+# data = balloon.prediction(payload weight,balloon mass,parachute diameter,helium tanks,latitude,longitude,current altitude,status,query time)
+# payload weight        - lbs
+# balloon mass          - grams
+# parachute diameter    - ft
+# helium tanks          - # of tanks
+# latitude              - deg
+# longitude             - deg
+# current altitude      - ft
+# status                - ascent (1) or descent (-1)
+# query time            - string: 'now' or 'YYYY-MM-DD hh:mm:ss'
+
+# EXAMPLE:
+# data = balloon.prediction(6.0,1000,6.0,1.5,41.64,-83.243,10000,1,'now')
+
+# Function returns dictionary, which consists of keys:
+# ..['Burst Altitude']      - ft
+# ..['Burst Latitude']      - deg
+# ..['Burst Longitude']     - deg
+# ..['Landing Lat']         - deg
+# ..['Landing Lon']         - deg
+# ..['Landing Time']        - Timestamp (when balloon is predicted to land, absolute time)
+# ..['Launch Time']         - Timestamp (what time the prediction was preformed at, absolute time)
+# ..['TimeData']            - Timeseries Dataframe, consists of time (absolute), status (ascent or descent), lat (deg), long (deg), and altitude (ft)
+
+
 
 #-----------------------------------------------------------------------------
 # Figure out arguments
 #-----------------------------------------------------------------------------
-
-def get_args(argv):
+def get_args(argv,queryTime):
     payload   = -1.0
     balloon   = -1.0
     parachute = -1.0
@@ -34,11 +65,7 @@ def get_args(argv):
     Hour = -1
 
     date = datetime.datetime.now()
-    sTimeNow = date.strftime('%Y%m%d_%H%M%S')
-
-    htmlfile = 'balloon_'+sTimeNow+'.html'
-    kmlfile  = 'balloon_'+sTimeNow+'.kml'
-    csvfile  = 'balloon_'+sTimeNow+'.csv'
+    sTimeNow = date.strftime('%Y-%m-%d %H:%M:%S')
 
     callsign = 'abcdef'
     BurstTime = 7.0*24.0*60.0*60.0
@@ -60,18 +87,6 @@ def get_args(argv):
         m = re.match(r'-callsign=(.*)',arg)
         if m:
             callsign = m.group(1)
-
-        m = re.match(r'-html=(.*)',arg)
-        if m:
-            htmlfile = m.group(1)
-
-        m = re.match(r'-kml=(.*)',arg)
-        if m:
-            kmlfile = m.group(1)
-
-        m = re.match(r'-csv=(.*)',arg)
-        if m:
-            csvfile = m.group(1)
 
         m = re.match(r'-payload=(.*)',arg)
         if m:
@@ -263,7 +278,12 @@ def get_args(argv):
     if (Hour < 0):
         Hour = CurrentHour
 
-    LaunchTime = datetime.datetime(Year,Month,Day,Hour,0,0)
+    #LaunchTime = datetime.datetime(Year,Month,Day,Hour,0,0)
+    
+    if queryTime == 'now':
+        LaunchTime = datetime.datetime.now()
+    if queryTime != 'now':
+        LaunchTime = datetime.datetime.strptime(queryTime, '%Y-%m-%d %H:%M:%S')
 
     args = {'balloon':balloon, 
             'payload':payload,
@@ -280,9 +300,6 @@ def get_args(argv):
             'month':Month,
             'day':Day,
             'hour':Hour,
-            'htmlfile':htmlfile,
-            'kmlfile':kmlfile,
-            'csvfile':csvfile,
             'callsign':callsign,
             'loss':loss,
             'update':update,
@@ -304,7 +321,7 @@ def get_args(argv):
 
 def get_station(longitude, latitude):
 
-    fpin = open("C:/Users/Owner/Desktop/MBURSTPython/StationList.txt",'r')
+    fpin = open(os.getcwd()+'/StationList.txt','r')
 
     MinDist = 1.0e32
 
@@ -336,7 +353,7 @@ def get_station(longitude, latitude):
 
         #print("Expanding list of stations....")
 
-        fpin = open('C:/Users/Owner/Desktop/MBURSTPython/StationListWorld.txt','r')
+        fpin = open(os.getcwd()+'/StationListWorld.txt','r')
 
         for line in fpin:
 
@@ -356,8 +373,6 @@ def get_station(longitude, latitude):
 
         fpin.close()
 
-    #print(MinDist, DistSave)
-
     stat = StatSave
     date = datetime.datetime.now()
     sDateHour = date.strftime('%Y.%m.%d.%H')
@@ -371,14 +386,8 @@ def get_station(longitude, latitude):
 
     outfile = stat+'.'+sDateHour+'.txt'
 
-    #print(url)
-    #print(outfile)
-
     if (not os.path.isfile(outfile)):
-        # command = '/sw/bin/wget -O '+outfile+' '+url+' >& .log'
-        #command = '/opt/local/bin/curl -o '+outfile+' '+url+' >& .log.curl'
         command = 'curl -o '+outfile+' '+url
-        #print(command)
         os.system(command)
 
     return (outfile,url,IsNam,SaveLat,SaveLon)
@@ -497,9 +506,7 @@ def KaymontBalloonBurst(BalloonMass):
     kaymontBurstDiameter = [3.00, 3.78, 4.12, 4.72, 4.99, 
                             6.02, 6.53, 7.00, 7.86, 8.63, 
                             9.44, 10.54, 13.00]
-
     burst = -1.0
-
     i = 0
     for mass in kaymontMass:
         if (BalloonMass == mass):
@@ -529,11 +536,8 @@ def calculate_helium(NumberOfTanks):
     return NumberOfHe
 
 #-----------------------------------------------------------------------------
-# 
 #-----------------------------------------------------------------------------
-
 #-----------------------------------------------------------------------------
-# 
 #-----------------------------------------------------------------------------
 
 def calc_ascent_rate(RapData, NumberOfHelium, args, altitude):
@@ -585,7 +589,6 @@ def calc_ascent_rate(RapData, NumberOfHelium, args, altitude):
     return (AscentRate, Diameter)
 
 #-----------------------------------------------------------------------------
-# 
 #-----------------------------------------------------------------------------
 
 def calc_descent_rate(RapData, args, altitude):
@@ -600,7 +603,6 @@ def calc_descent_rate(RapData, args, altitude):
     return DescentRate
 
 #-----------------------------------------------------------------------------
-# 
 #-----------------------------------------------------------------------------
 
 def get_temperature_and_pressure(altitude,RapData):
@@ -624,7 +626,6 @@ def get_temperature_and_pressure(altitude,RapData):
 
 
 #-----------------------------------------------------------------------------
-# 
 #-----------------------------------------------------------------------------
 
 def get_wind(RapData,altitude):
@@ -647,189 +648,9 @@ def get_wind(RapData,altitude):
 
 
 #-----------------------------------------------------------------------------
-# 
-#-----------------------------------------------------------------------------
-
-#-----------------------------------------------------------------------------
-# 
-#-----------------------------------------------------------------------------
-
-def write_html(args,AscentLongitudes,AscentLatitudes,AscentAltitudes,
-               DescentLongitudes,DescentLatitudes,DescentAltitudes,
-               AscentTime, DescentTime,
-               AscentRate, DescentRate,
-               FinalLongitudes,FinalLatitudes,
-               PeakAltitude,PeakAltitudeDiff, url,
-               TotalDistance, 
-               RealTimeLon, RealTimeLat,
-               StationLon, StationLat):
-
-    #csvout = open(args['csvfile'],'w')
-    
-    burstlat = DescentLatitudes[0]
-    burstlon = DescentLongitudes[0]
-
-
-    #-------------------------------------------------------------
-    # KML File Header
-    #-------------------------------------------------------------
-
-    #-------------------------------------------------------------
-    # Launch Site
-    #-------------------------------------------------------------
-    lat = AscentLatitudes[0]
-    lon = AscentLongitudes[0]
-
-    LaunchLat = lat
-    LaunchLon = lon
-
-    #-------------------------------------------------------------
-    # Ascent Locations
-    #-------------------------------------------------------------
-    i = 0
-    for alt in AscentAltitudes:
-        if i > 0:
-            alt0 = int((AscentAltitudes[i-1]/FtToMeters)/10000)
-            alt1 = int((alt/FtToMeters)/10000)
-            if (alt1 != alt0):
-                lat = AscentLatitudes[i]
-                lon = AscentLongitudes[i]
-             
-        i=i+1
-
-    #-------------------------------------------------------------
-    # Descent Locations
-    #-------------------------------------------------------------
-    i = 0
-    for alt in DescentAltitudes:
-        if i > 0:
-            alt0 = int((DescentAltitudes[i-1]/FtToMeters)/10000)
-            alt1 = int((alt/FtToMeters)/10000)
-            if (alt1 != alt0):
-                lat = DescentLatitudes[i]
-                lon = DescentLongitudes[i]
-           
-        i=i+1
-        
-    #-------------------------------------------------------------
-    # Burst Location
-    #-------------------------------------------------------------
-    lat = DescentLatitudes[0]
-    lon = DescentLongitudes[0]
-    
-    #-------------------------------------------------------------
-    # Landing Site
-    #-------------------------------------------------------------
-    i = len(DescentLatitudes)
-    lat = DescentLatitudes[i-1]
-    lon = DescentLongitudes[i-1]
-
-    LandingLat = lat
-    LandingLon = lon
-    print("Landing Location: ",LandingLat,",",LandingLon)
-    
-    #-------------------------------------------------------------
-    # Current RealTime Location
-    #-------------------------------------------------------------
-    if (len(RealTimeLat) > 1):
-        lat = RealTimeLat[0]
-        lon = RealTimeLon[0]
-        
-    #-------------------------------------------------------------
-    # Ascent
-    #-------------------------------------------------------------
-    i = 0
-    t = 0.0
-    timeVec = []
-    for lat in AscentLatitudes:
-        lon = AscentLongitudes[i]
-        alt = AscentAltitudes[i]
-        t = t + dt
-        time = args['launchtime']+datetime.timedelta(seconds=t)
-        timeS = time.strftime('%Y-%m-%dT%H:%M:%SZ')
-        #csvout.write(timeS+","+str(t)+","+str(lon)+","+str(lat)+","+str(alt)+"\n")
-        timeVec.append(timeS)
-        i=i+1
-
-    #-------------------------------------------------------------
-    # Descent
-    #-------------------------------------------------------------
-    i = 0
-    for lat in DescentLatitudes:
-        t = t + dt
-        lon = DescentLongitudes[i]
-        alt = DescentAltitudes[i]
-        time = args['launchtime']+datetime.timedelta(seconds=t)
-        timeS = time.strftime('%Y-%m-%dT%H:%M:%SZ')
-        timeVec.append(timeS)
-        #csvout.write(timeS+","+str(t)+","+str(lon)+","+str(lat)+","+str(alt)+"\n")
-        i=i+1
-
-    #-------------------------------------------------------------
-    # Weather Station Locations
-    #-------------------------------------------------------------
-    i = 0
-    for lat in StationLat:
-        lon = StationLon[i]
-        #print(lat,lon)
-        i=i+1
-
-    #-------------------------------------------------------------
-    # Perturbed Landing Sites
-    #-------------------------------------------------------------
-    i = 0
-    for lat in FinalLatitudes:
-        lon = FinalLongitudes[i]
-        i=i+1
-
-    #-------------------------------------------------------------
-    # RealTime
-    #-------------------------------------------------------------
-    if (len(RealTimeLat) > 1):
-        i = 0
-        for lat in RealTimeLat:
-            lon = RealTimeLon[i]
-            i=i+1
-
-    #-------------------------------------------------------------
-    # Extra Information
-    #-------------------------------------------------------------
-    
-    earth_radius_miles = 3956.0
-
-    #Find the distance between each station and the user's coordinates
-    #accounting for spherical geometery
-    dlat = np.radians(LandingLat) - np.radians(LaunchLat)
-    dlon = np.radians(LandingLon) - np.radians(LaunchLon)
-    a = np.square(np.sin(dlat/2.0)) + np.cos(np.radians(LaunchLat)) * \
-        np.cos(np.radians(LandingLat)) * np.square(np.sin(dlon/2.0))
-    great_circle_distance = 2 * np.arcsin(np.sqrt(a))
-    distance = earth_radius_miles * great_circle_distance
-
-
-    dummy = np.round(AscentRate*100.0)/100.0
-    dummy2 = np.round(AscentRate/FtToMeters*60.0*100.0)/100.0
-
-    dummy = np.round(DescentRate*100.0)/100.0
-
-    d = args['parachute']*3.3*2
-
-    wt = args['payload']*2.2
-
-    #csvout.close()
-    return timeVec
-
 #-----------------------------------------------------------------------------
 #-----------------------------------------------------------------------------
-# What was at the top before
 #-----------------------------------------------------------------------------
-#-----------------------------------------------------------------------------
-
-# Define Input List
-Inputs = ['balloon.py','-payload=6.0', '-balloon=1000', '-parachute=6.0', '-helium=1.5', '-lat=42.0', '-lon=-84.0','-alt=20000']
-# add '-lat=42.0', '-lon=-84.0','-alt=20000'
-# add -de argument to end if only computing descent
-
 
 ParachuteFudge = 0.333
 BalloonDragCoefficient = 0.5
@@ -857,231 +678,101 @@ SurfaceGravity = 9.80665 # m/s2
 EarthRadius = 6372000.0 # m
 
 
-#-----------------------------------------------------------------------------
-#-----------------------------------------------------------------------------
-# Main Code!
-#-----------------------------------------------------------------------------
-#-----------------------------------------------------------------------------
-
-#args = get_args(sys.argv)
-args = get_args(Inputs)   
-
-if (args['balloon'] > 0):
-
-    BurstDiameter = KaymontBalloonBurst(args['balloon'])
-    if (BurstDiameter < 0 and args['zero'] == 1):
-        BurstDiameter = args['r']*2.001
-
-    if (BurstDiameter < 0):
-        print("Could not determine burst diameter! Stopping!")
-
-    NumberOfHelium = calculate_helium(args['helium'])
-
-    TotalKm = 0.0
-
-    if (BurstDiameter > 0):
-
-        longitude = args['longitude']
-        latitude = args['latitude']
-
-        filename,url,IsNam,StatLat,StatLon = get_station(longitude, latitude)
-        StationLat = [StatLat]
-        StationLon = [StatLon]
-        RapData = read_rap(filename,args,IsNam)
-
-        Diameter = 0.0
-        AscentTime = 1.0
-        #print(args['altitude'])
-
-        if (args['altitude'] < 0.0):
-            altitude = RapData['Altitude'][0]
-        else:
-            altitude = args['altitude']
-            if (args['descent']):
-                Diameter = BurstDiameter*2.0
-                AscentRate = 0.0
-
-        AscentLongitude = []
-        AscentLatitude  = []
-        AscentAltitude  = []
-
-        DescentLongitude = []
-        DescentLatitude  = []
-        DescentAltitude  = []
-
-        FinalLongitudes = []
-        FinalLatitudes  = []
-
-        # Ascent:
-
-        AscentLongitude.append(longitude)
-        AscentLatitude.append(latitude)
-        AscentAltitude.append(altitude)
-
-        TotalDistance = 0.0
-
-        WindSpeed = []
-        TotalTime = []
-        Altitudes = []
-
-        if (args['update'] == 1):
-            oldfilename,url,IsNam,StatLat,StatLon = get_station(longitude, latitude)
-            if (StatLat != StationLat[-1]):
-                StationLat.append(StatLat)
-                StationLon.append(StatLon)
-            RapData = read_rap(oldfilename,args,IsNam)
-        else:
+def prediction(payload,balloon,parachute,helium,lat,lon,alt,status,queryTime):
+    # Define Input List
+    Inputs = ['balloon.py','-payload='+str(payload), '-balloon='+str(balloon), '-parachute='+str(parachute), '-helium='+str(helium), '-lat='+str(lat), '-lon='+str(lon),'-alt='+str(alt)]
+    
+    if status == -1:
+        Inputs.append('-de')
+   
+    
+    #-----------------------------------------------------------------------------
+    #-----------------------------------------------------------------------------
+    # Main Code!
+    #-----------------------------------------------------------------------------
+    #-----------------------------------------------------------------------------
+    
+    #args = get_args(sys.argv)
+    args = get_args(Inputs,queryTime)   
+    
+    if (args['balloon'] > 0):
+    
+        BurstDiameter = KaymontBalloonBurst(args['balloon'])
+        if (BurstDiameter < 0 and args['zero'] == 1):
+            BurstDiameter = args['r']*2.001
+    
+        if (BurstDiameter < 0):
+            print("Could not determine burst diameter! Stopping!")
+    
+        NumberOfHelium = calculate_helium(args['helium'])
+    
+        TotalKm = 0.0
+    
+        if (BurstDiameter > 0):
+    
+            longitude = args['longitude']
+            latitude = args['latitude']
+    
             filename,url,IsNam,StatLat,StatLon = get_station(longitude, latitude)
-            if (StatLat != StationLat[-1]):
-                StationLat.append(StatLat)
-                StationLon.append(StatLon)
+            StationLat = [StatLat]
+            StationLon = [StatLon]
             RapData = read_rap(filename,args,IsNam)
-        
-        while (Diameter < BurstDiameter and altitude > -1.0):
-
-            #print(altitude)
-
+    
+            Diameter = 0.0
+            AscentTime = 1.0
+            #print(args['altitude'])
+    
+            if (args['altitude'] < 0.0):
+                altitude = RapData['Altitude'][0]
+            else:
+                altitude = args['altitude']
+                if (args['descent']):
+                    Diameter = BurstDiameter*2.0
+                    AscentRate = 0.0
+    
+            AscentLongitude = []
+            AscentLatitude  = []
+            AscentAltitude  = []
+    
+            DescentLongitude = []
+            DescentLatitude  = []
+            DescentAltitude  = []
+    
+            FinalLongitudes = []
+            FinalLatitudes  = []
+    
+            # Ascent:
+    
+            AscentLongitude.append(longitude)
+            AscentLatitude.append(latitude)
+            AscentAltitude.append(altitude)
+    
+            TotalDistance = 0.0
+    
+            WindSpeed = []
+            TotalTime = []
+            Altitudes = []
+            Latitudes = []
+            Longitudes = []
+            Status = []
+    
             if (args['update'] == 1):
+                oldfilename,url,IsNam,StatLat,StatLon = get_station(longitude, latitude)
+                if (StatLat != StationLat[-1]):
+                    StationLat.append(StatLat)
+                    StationLon.append(StatLon)
+                RapData = read_rap(oldfilename,args,IsNam)
+            else:
                 filename,url,IsNam,StatLat,StatLon = get_station(longitude, latitude)
                 if (StatLat != StationLat[-1]):
                     StationLat.append(StatLat)
                     StationLon.append(StatLon)
-                if (filename != oldfilename):
-                    RapData = read_rap(filename,args,IsNam)
-                    oldfilename = filename
+                RapData = read_rap(filename,args,IsNam)
             
-            NumberOfHelium = NumberOfHelium * (1.0-args['loss']/100.0/60.0*dt)
-
-            Veast,Vnorth = get_wind(RapData,altitude)
-            DegPerMeter = 360.0 / (2*pi * (EarthRadius + altitude))
-            longitude = longitude + Veast  * DegPerMeter * dt / np.cos(latitude*dtor)
-            latitude  = latitude  + Vnorth * DegPerMeter * dt
-
-            WindSpeed.append(np.sqrt(Veast*Veast + Vnorth*Vnorth))
-            TotalDistance += np.sqrt(Veast*Veast + Vnorth*Vnorth)*dt*MilesPerMeter
-
-            AscentRate,Diameter = calc_ascent_rate(RapData, NumberOfHelium, args, altitude)
-            if (altitude < args['hover']):
-                altitude = altitude + AscentRate*dt
-
-            AscentLongitude.append(longitude)
-            AscentLatitude.append(latitude)
-            AscentAltitude.append(altitude)
-
-            AscentTime = AscentTime + dt
-
-            TotalTime.append(AscentTime)
-            Altitudes.append(altitude)
-
-            if (AscentTime > args['bursttime']):
-                Diameter = BurstDiameter*2
-            
-        #print('Final Peak Altitude :',altitude,' m')
-        #print('Ascent Time :',AscentTime/60.0,' minutes')
-
-        PeakAltitude = altitude
-        AscentRateSave = (altitude-AscentAltitude[0])/AscentTime
-        #print('Ascent Rate :',AscentRate,' m/s')
-        AscentTimeSave = AscentTime
-
-        BurstAltitude  = altitude
-        BurstLatitude  = latitude
-        BurstLongitude = longitude
-
-        # Descent:
-        DescentTime = 0.0
-
-        DescentLongitude.append(longitude)
-        DescentLatitude.append(latitude)
-        DescentAltitude.append(altitude)
-
-        if (altitude < 0.0):
-            altitude = RapData['Altitude'][0] + 1.0
-
-        while (altitude > RapData['Altitude'][0]):
-
-            Veast,Vnorth = get_wind(RapData,altitude)
-            DegPerMeter = 360.0 / (2*pi * (EarthRadius + altitude))
-            longitude = longitude + Veast  * DegPerMeter * dt / np.cos(latitude*dtor)
-            latitude  = latitude  + Vnorth * DegPerMeter * dt
-
-            WindSpeed.append(np.sqrt(Veast*Veast + Vnorth*Vnorth))
-            TotalDistance += np.sqrt(Veast*Veast + Vnorth*Vnorth)*dt*MilesPerMeter
-
-            DescentRate = calc_descent_rate(RapData, args, altitude)
-            altitude = altitude - DescentRate*dt
-
-            DescentLongitude.append(longitude)
-            DescentLatitude.append(latitude)
-            DescentAltitude.append(altitude)
-
-            DescentTime = DescentTime + dt
-            TotalTime.append(AscentTime+DescentTime)
-            Altitudes.append(altitude)
-
-            #print(DescentRate,altitude, latitude, longitude)
-
-        #print('Final Descent Altitude :',altitude,' m')
-        #print('Descent Time :',DescentTime/60.0,' minutes')
-        #print('Total Time :',(AscentTimeSave+DescentTime)/60.0,' minutes')
-
-        DescentRateSave = (DescentAltitude[0]-altitude)/DescentTime
-        #print('Descent Rate :',DescentRate,' m/s')
-
-
-        fig = plt.figure(figsize=(10,6))
-                    
-        ax1 = fig.add_subplot(2,2,1)
-        allLatitudes = AscentLatitude+DescentLatitude
-        allLongitudes = AscentLongitude+DescentLongitude
-        something = ax1.plot(allLongitudes,allLatitudes,color='black',linestyle='-',linewidth=0.5)
-        ax1.set_title('Coordinate Map')
-        ax1.set_xlabel('Longitude (deg)')
-        ax1.set_ylabel('Latitude (deg)')
-        plt.grid(True)
-        
-        ax2 = fig.add_subplot(2,2,2)
-        something = ax2.plot(np.array(TotalTime)/60.0, np.array(Altitudes)*3.281,color='black',linestyle='-',linewidth=0.5)
-        ax2.set_title('Altitude Profile')
-        ax2.set_xlabel('Time (minutes)')
-        ax2.set_ylabel('Altitude (ft)')
-
-        plt.grid(True)
-        plt.show()
-
-        #-----------------------------------------------------------------
-        # Redo calculation a few times with variations
-        #-----------------------------------------------------------------
-
-        i = 0
-
-        nEnsembles = args['nEnsembles']
-        errors     = args['errors']
-
-        DifferenceInPeakAltitude = 0.0
-
-        while (i < nEnsembles):
-
-            i=i+1
-
-            longitude = AscentLongitude[0]
-            latitude = AscentLatitude[0]
-            altitude = AscentAltitude[0]
-
-            Diameter = 0
-
-            NumberOfHelium = calculate_helium(args['helium'])
-            NumberOfHeliumPerturbed = random.normalvariate(NumberOfHelium,NumberOfHelium*errors/4)
-            BurstDiameterPertrubed = random.normalvariate(BurstDiameter,BurstDiameter*errors/4)
-
-            bt = random.normalvariate(args['bursttime'],args['bursttime']*errors/4)
-
-            AscentTime = 0
-
             while (Diameter < BurstDiameter and altitude > -1.0):
-
-                NumberOfHelium = NumberOfHelium * (1.0-args['loss']/100.0/60.0*dt)
-
+    
+                #print(altitude)
+    
                 if (args['update'] == 1):
                     filename,url,IsNam,StatLat,StatLon = get_station(longitude, latitude)
                     if (StatLat != StationLat[-1]):
@@ -1090,65 +781,190 @@ if (args['balloon'] > 0):
                     if (filename != oldfilename):
                         RapData = read_rap(filename,args,IsNam)
                         oldfilename = filename
-
+                
+                NumberOfHelium = NumberOfHelium * (1.0-args['loss']/100.0/60.0*dt)
+    
                 Veast,Vnorth = get_wind(RapData,altitude)
-
-                Veast  = random.normalvariate(Veast, np.abs(Veast)*errors)
-                Vnorth = random.normalvariate(Vnorth,np.abs(Vnorth)*errors)
-
                 DegPerMeter = 360.0 / (2*pi * (EarthRadius + altitude))
                 longitude = longitude + Veast  * DegPerMeter * dt / np.cos(latitude*dtor)
                 latitude  = latitude  + Vnorth * DegPerMeter * dt
-
-                AscentRate,Diameter = calc_ascent_rate(RapData, NumberOfHeliumPerturbed, args, altitude)
-
+    
+                WindSpeed.append(np.sqrt(Veast*Veast + Vnorth*Vnorth))
+                TotalDistance += np.sqrt(Veast*Veast + Vnorth*Vnorth)*dt*MilesPerMeter
+    
+                AscentRate,Diameter = calc_ascent_rate(RapData, NumberOfHelium, args, altitude)
                 if (altitude < args['hover']):
                     altitude = altitude + AscentRate*dt
-
+    
+                AscentLongitude.append(longitude)
+                AscentLatitude.append(latitude)
+                AscentAltitude.append(altitude)
+    
                 AscentTime = AscentTime + dt
+    
+                TotalTime.append(AscentTime)
+                Altitudes.append(altitude)
+                Latitudes.append(latitude)
+                Longitudes.append(longitude)
+                Status.append(1)
+    
                 if (AscentTime > args['bursttime']):
                     Diameter = BurstDiameter*2
-
-
-            DifferenceInPeakAltitude = DifferenceInPeakAltitude + (altitude-PeakAltitude)**2
-
+                
+    
+            PeakAltitude = altitude
+            AscentRateSave = (altitude-AscentAltitude[0])/AscentTime
+            #print('Ascent Rate :',AscentRate,' m/s')
+            AscentTimeSave = AscentTime
+    
+            BurstAltitude  = altitude 
+            BurstLatitude  = latitude
+            BurstLongitude = longitude
+    
+            # Descent:
+            DescentTime = 0.0
+    
+            DescentLongitude.append(longitude)
+            DescentLatitude.append(latitude)
+            DescentAltitude.append(altitude)
+    
             if (altitude < 0.0):
                 altitude = RapData['Altitude'][0] + 1.0
-
+    
             while (altitude > RapData['Altitude'][0]):
-
+    
                 Veast,Vnorth = get_wind(RapData,altitude)
-
-                Veast  = random.normalvariate(Veast, np.abs(Veast)*errors)
-                Vnorth = random.normalvariate(Vnorth,np.abs(Vnorth)*errors)
-
                 DegPerMeter = 360.0 / (2*pi * (EarthRadius + altitude))
                 longitude = longitude + Veast  * DegPerMeter * dt / np.cos(latitude*dtor)
                 latitude  = latitude  + Vnorth * DegPerMeter * dt
-
+    
+                WindSpeed.append(np.sqrt(Veast*Veast + Vnorth*Vnorth))
+                TotalDistance += np.sqrt(Veast*Veast + Vnorth*Vnorth)*dt*MilesPerMeter
+    
                 DescentRate = calc_descent_rate(RapData, args, altitude)
                 altitude = altitude - DescentRate*dt
-
-            FinalLongitudes.append(longitude)
-            FinalLatitudes.append(latitude)
-            
-        if (nEnsembles > 1):
-            DifferenceInPeakAltitude = np.sqrt(DifferenceInPeakAltitude/nEnsembles)
-
-        RealTimeLat = []
-        RealTimeLon = []
-        RealTimeAlt = []
-
-        # old aprs stuff
-
-        timeVec = write_html(args,AscentLongitude,AscentLatitude,AscentAltitude,
-                   DescentLongitude,DescentLatitude,DescentAltitude,
-                   AscentTimeSave,DescentTime,
-                   AscentRateSave,DescentRateSave,
-                   FinalLongitudes,FinalLatitudes,
-                   PeakAltitude,DifferenceInPeakAltitude, url, 
-                   TotalDistance, 
-                   RealTimeLon, RealTimeLat,
-                   StationLon, StationLat)
-        
+    
+                DescentLongitude.append(longitude)
+                DescentLatitude.append(latitude)
+                DescentAltitude.append(altitude)
+    
+                DescentTime = DescentTime + dt
+                TotalTime.append(AscentTime+DescentTime)
+                Altitudes.append(altitude)
+                Latitudes.append(latitude)
+                Longitudes.append(longitude)
+                Status.append(-1)
+     
+    
+            DescentRateSave = (DescentAltitude[0]-altitude)/DescentTime
+            #print('Descent Rate :',DescentRate,' m/s')
+    
+    
+            #-----------------------------------------------------------------
+            # Redo calculation a few times with variations
+            #-----------------------------------------------------------------
+    
+            i = 0
+    
+            nEnsembles = args['nEnsembles']
+            errors     = args['errors']
+    
+            DifferenceInPeakAltitude = 0.0
+    
+            while (i < nEnsembles):
+    
+                i=i+1
+    
+                longitude = AscentLongitude[0]
+                latitude = AscentLatitude[0]
+                altitude = AscentAltitude[0]
+    
+                Diameter = 0
+    
+                NumberOfHelium = calculate_helium(args['helium'])
+                NumberOfHeliumPerturbed = random.normalvariate(NumberOfHelium,NumberOfHelium*errors/4)
+                BurstDiameterPertrubed = random.normalvariate(BurstDiameter,BurstDiameter*errors/4)
+    
+                bt = random.normalvariate(args['bursttime'],args['bursttime']*errors/4)
+    
+                AscentTime = 0
+    
+                while (Diameter < BurstDiameter and altitude > -1.0):
+    
+                    NumberOfHelium = NumberOfHelium * (1.0-args['loss']/100.0/60.0*dt)
+    
+                    if (args['update'] == 1):
+                        filename,url,IsNam,StatLat,StatLon = get_station(longitude, latitude)
+                        if (StatLat != StationLat[-1]):
+                            StationLat.append(StatLat)
+                            StationLon.append(StatLon)
+                        if (filename != oldfilename):
+                            RapData = read_rap(filename,args,IsNam)
+                            oldfilename = filename
+    
+                    Veast,Vnorth = get_wind(RapData,altitude)
+    
+                    Veast  = random.normalvariate(Veast, np.abs(Veast)*errors)
+                    Vnorth = random.normalvariate(Vnorth,np.abs(Vnorth)*errors)
+    
+                    DegPerMeter = 360.0 / (2*pi * (EarthRadius + altitude))
+                    longitude = longitude + Veast  * DegPerMeter * dt / np.cos(latitude*dtor)
+                    latitude  = latitude  + Vnorth * DegPerMeter * dt
+    
+                    AscentRate,Diameter = calc_ascent_rate(RapData, NumberOfHeliumPerturbed, args, altitude)
+    
+                    if (altitude < args['hover']):
+                        altitude = altitude + AscentRate*dt
+    
+                    AscentTime = AscentTime + dt
+                    if (AscentTime > args['bursttime']):
+                        Diameter = BurstDiameter*2
+    
+    
+                DifferenceInPeakAltitude = DifferenceInPeakAltitude + (altitude-PeakAltitude)**2
+    
+                if (altitude < 0.0):
+                    altitude = RapData['Altitude'][0] + 1.0
+    
+                while (altitude > RapData['Altitude'][0]):
+    
+                    Veast,Vnorth = get_wind(RapData,altitude)
+    
+                    Veast  = random.normalvariate(Veast, np.abs(Veast)*errors)
+                    Vnorth = random.normalvariate(Vnorth,np.abs(Vnorth)*errors)
+    
+                    DegPerMeter = 360.0 / (2*pi * (EarthRadius + altitude))
+                    longitude = longitude + Veast  * DegPerMeter * dt / np.cos(latitude*dtor)
+                    latitude  = latitude  + Vnorth * DegPerMeter * dt
+    
+                    DescentRate = calc_descent_rate(RapData, args, altitude)
+                    altitude = altitude - DescentRate*dt
+    
+                FinalLongitudes.append(longitude)
+                FinalLatitudes.append(latitude)
+                
+            if (nEnsembles > 1):
+                DifferenceInPeakAltitude = np.sqrt(DifferenceInPeakAltitude/nEnsembles)
+    
+            RealTimeLat = []
+            RealTimeLon = []
+            RealTimeAlt = []
+           
+    
+    AllData = dict()
+    AllData['TimeData'] = pandas.DataFrame(index = pandas.to_datetime(pandas.to_datetime(args['launchtime']) + pandas.to_timedelta(TotalTime, unit='s')))
+    AllData['TimeData']['Status'] = Status
+    AllData['TimeData']['Latitude'] = Latitudes
+    AllData['TimeData']['Longitude'] = Longitudes
+    AllData['TimeData']['Altitude'] = np.array(Altitudes) * 3.28084
+    
+    AllData['Burst Altitude'] = BurstAltitude * 3.28084
+    AllData['Burst Latitude'] = BurstLatitude 
+    AllData['Burst Longitude'] = BurstLongitude 
+    AllData['Launch Time'] = pandas.to_datetime(args['launchtime'])
+    AllData['Landing Lat'] = Latitudes[-1]
+    AllData['Landing Lon'] = Longitudes[-1]
+    AllData['Landing Time'] = AllData['TimeData'].index[-1]
+   
+    return AllData
 
