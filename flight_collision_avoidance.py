@@ -12,7 +12,7 @@ url = 'http://flightxml.flightaware.com/soap/FlightXML2/wsdl'
 logging.basicConfig(level=logging.INFO)
 api = Client(url, username=username, password=apiKey)
 
-api.service.SetMaximumResultSize(100)
+api.service.SetMaximumResultSize(15)
 
 def get_api_data(latitude, longitude, altitude_feet, delta_miles, delta_feet):
     delta_degrees = delta_miles/69.0
