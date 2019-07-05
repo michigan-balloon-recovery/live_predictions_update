@@ -3,7 +3,7 @@ import os
 directmessage = 1
 channel = 0
 recipientName = "Robby"
-slackURL = "https://hooks.slack.com/services/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"
+slackURL = <INSERTSLACKURLHERE>
 icon = "ghost"
 botUsername = "Python Bot"
 messageText = "Hell yeah"
