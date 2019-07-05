@@ -5,7 +5,7 @@ import numpy as np
 callsign = "P0520293"
 
 # get JSON data from APRS
-json_response= requests.get("http://api.aprs.fi/api/get?name="+callsign+"&what=loc&apikey=42457.M4AFa3hdkXG31&format=json")
+json_response= requests.get("http://api.aprs.fi/api/get?name="+callsign+"&what=loc&apikey=<APIKEY>&format=json")
 aprs_dict = json.loads(json_response.text)
 
 #np.float()
